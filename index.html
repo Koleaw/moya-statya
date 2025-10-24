@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RaaS vs CAPEX Calculator (Neutral)</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<style>
+  :root{
+    --bg:#ffffff;
+    --fg:#111111;
+    --muted:#666666;
+    --line:#222222;
+    --bar1:#333333;
+    --bar2:#777777;
+    --bar3:#bbbbbb;
+    --accent:#000000;
+    --card:#f6f6f6;
+    --border:#e0e0e0;
+  }
+  html,body{background:var(--bg); color:var(--fg); font:16px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif; margin:0; padding:0;}
+  .wrap{max-width:1100px; margin:24px auto; padding:0 18px;}
+  h1{font-size:22px; margin:0 0 8px;}
+  .grid{display:grid; grid-template-columns:360px 1fr; gap:18px;}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px;}
+  .card h2{font-size:16px; margin:0 0 10px;}
+  .row{display:grid; grid-template-columns:1.1fr .9fr .7fr; gap:8px; align-items:center; margin-bottom:6px;}
+  .row label{font-size:13px; color:var(--muted);}
+  .row input{width:100%; padding:6px 8px; border:1px solid var(--border); border-radius:8px; background:#fff; color:var(--fg);}
+  .row .unit{font-size:13px; color:var(--muted); text-align:right;}
+  .btns{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
+  button{background:#111; color:#fff; border:none; border-radius:8px; padding:8px 10px; cursor:pointer}
+  button.secondary{background:#444;}
+  .status{font-size:13px; color:var(--muted); margin-top:6px;}
+  canvas{background:#fff; border:1px solid var(--border); border-radius:10px; padding:8px;}
+  .small{font-size:12px; color:var(--muted);}
+  .foot{margin-top:10px; font-size:12px; color:var(--muted);}
+  .grid-charts{display:grid; grid-template-columns:1fr; gap:16px;}
+  @media (min-width:1000px){ .grid-charts{grid-template-columns:1fr 1fr;} #chart-tornado{grid-column:1 / -1;} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>RaaS vs CAPEX Calculator</h1>
+  <div class="grid">
+    <div class="card">
+      <h2>Inputs</h2>
+      <div class="row"><label>RaaS price S</label><input id="S" type="number" step="0.01" value="16"><div class="unit">$/h</div></div>
+      <div class="row"><label>Hours per month H</label><input id="H" type="number" step="1" value="320"><div class="unit">h/mo</div></div>
+      <div class="row"><label>Cycles per minute (CPM)</label><input id="CPM" type="number" step="0.1" value="10"><div class="unit">boxes/min</div></div>
+      <div class="row"><label>Robot power P<sub>e</sub></label><input id="Pe" type="number" step="0.01" value="0.35"><div class="unit">kW</div></div>
+      <div class="row"><label>Electricity price p<sub>e</sub></label><input id="pe" type="number" step="0.001" value="0.133"><div class="unit">$/kWh</div></div>
+      <div class="row"><label>CAPEX price P</label><input id="P" type="number" step="100" value="120000"><div class="unit">$</div></div>
+      <div class="row"><label>APR r</label><input id="r" type="number" step="0.001" value="0.10"><div class="unit">1/year</div></div>
+      <div class="row"><label>Lease term n</label><input id="n" type="number" step="1" value="48"><div class="unit">months</div></div>
+      <div class="row"><label>Maintenance M</label><input id="M" type="number" step="10" value="1500"><div class="unit">$/mo</div></div>
+      <div class="row"><label>Labor w</label><input id="w" type="number" step="0.1" value="35.5"><div class="unit">$/h</div></div>
+      <div class="row"><label>Setup fee</label><input id="setup" type="number" step="50" value="10000"><div class="unit">$</div></div>
+      <div class="row"><label>Freight</label><input id="freight" type="number" step="50" value="2000"><div class="unit">$</div></div>
+      <div class="row"><label>Amortize setup+freight</label><input id="amort" type="checkbox" checked><div class="unit"></div></div>
+      <div class="small">UPH = 60 × CPM. Annuity A(P,r,n) = P · [m(1+m)^n / ((1+m)^n − 1)], m=r/12.</div>
+      <div class="btns">
+        <button id="recalc">Recalculate</button>
+        <button id="save1" class="secondary">Save Breakeven PNG</button>
+        <button id="save2" class="secondary">Save CPU PNG</button>
+        <button id="save3" class="secondary">Save Sensitivity PNG</button>
+      </div>
+      <div class="btns">
+        <input type="file" id="file" accept=".csv">
+        <button id="export" class="secondary">Export current params (CSV)</button>
+      </div>
+      <div class="status" id="status">Ready. Tip: you can load a CSV with headers “key,value”.</div>
+      <div class="foot">Accepted CSV keys: S,H,CPM,P,r,n,M,w,pe,Pe,setup,freight,amort (0/1). Extra columns ignored. Decimals with dot or comma are OK.</div>
+    </div>
+
+    <div class="grid-charts">
+      <div class="card">
+        <h2>Breakeven H* = (A+M)/S vs S</h2>
+        <canvas id="chart-be" height="260"></canvas>
+      </div>
+      <div class="card">
+        <h2>Cost per unit</h2>
+        <canvas id="chart-bar" height="260"></canvas>
+      </div>
+      <div class="card" style="grid-column:1/-1">
+        <h2>Sensitivity (Δ = RaaS − CAPEX, ±20%)</h2>
+        <canvas id="chart-tornado" height="360"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script>
+const els = id => document.getElementById(id);
+const num = v => {
+  if (typeof v === 'number') return v;
+  if (!v) return NaN;
+  return parseFloat(String(v).replace(',', '.'));
+};
+function getInputs(){
+  return {
+    S:num(els('S').value),
+    H:num(els('H').value),
+    CPM:num(els('CPM').value),
+    Pe:num(els('Pe').value),
+    pe:num(els('pe').value),
+    P:num(els('P').value),
+    r:num(els('r').value),
+    n:num(els('n').value),
+    M:num(els('M').value),
+    w:num(els('w').value),
+    setup:num(els('setup').value),
+    freight:num(els('freight').value),
+    amort: els('amort').checked
+  };
+}
+function setInputs(obj){
+  const map = {S:'S',H:'H',CPM:'CPM',Pe:'Pe',pe:'pe',P:'P',r:'r',n:'n',M:'M',w:'w',setup:'setup',freight:'freight',amort:'amort'};
+  Object.keys(map).forEach(k=>{
+    if (obj[k]!==undefined && !isNaN(num(obj[k]))){
+      const el = els(map[k]);
+      el.value = num(obj[k]);
+    }
+  });
+  if (obj.amort!==undefined) els('amort').checked = !!Number(obj.amort);
+}
+function annuity(P,r,n){ const m=r/12; const pow=Math.pow(1+m,n); return P*(m*pow)/(pow-1); }
+function compute(all){
+  const UPH = 60*all.CPM;
+  const A = annuity(all.P, all.r, all.n);
+  const energyUnit = (all.pe*all.Pe)/UPH;
+  let CR = (all.S + all.pe*all.Pe)/UPH;
+  if(all.amort){
+    CR += ( (all.setup||0 + all.freight||0) / (all.n*all.H*UPH) );
+  }
+  const CC = (A + all.M + all.pe*all.Pe*all.H)/(all.H*UPH);
+  const CL = all.w/UPH;
+  const Hstar = (A + all.M)/all.S;
+  return {UPH,A,CR,CC,CL,Hstar,energyUnit};
+}
+
+// Chart styles (neutral black/gray). Ensure white background on export.
+const whiteBG = {
+  id: 'whiteBG',
+  beforeDraw(chart){
+    const {ctx, width, height} = chart;
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-over';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0,0,width,height);
+    ctx.restore();
+  }
+};
+Chart.defaults.color = '#111';
+Chart.defaults.borderColor = '#d0d0d0';
+Chart.defaults.font.family = 'Inter, Roboto, Arial, sans-serif';
+
+let beChart, barChart, tornadoChart;
+
+function buildCharts(){
+  const all = getInputs();
+  const out = compute(all);
+
+  // Breakeven vs S
+  const Svals = [];
+  for(let s=Math.max(4, all.S-8); s<=Math.max(all.S+12, 34); s+=1){
+    Svals.push(s);
+  }
+  const A = annuity(all.P, all.r, all.n);
+  const Hs = Svals.map(s => (A + all.M)/s);
+
+  const beCtx = els('chart-be').getContext('2d');
+  beChart && beChart.destroy();
+  beChart = new Chart(beCtx, {
+    type:'line',
+    data:{
+      labels:Svals,
+      datasets:[
+        {label:'H*=(A+M)/S', data:Hs, borderColor:'#111', backgroundColor:'rgba(0,0,0,0)', tension:0.1, pointRadius:0},
+        {label:'Current S', data:Svals.map(s=> s===all.S ? out.Hstar : null), borderColor:'#777', pointBackgroundColor:'#777', showLine:false, pointRadius:4}
+      ]
+    },
+    options:{
+      responsive:true,
+      plugins:{ legend:{labels:{usePointStyle:true}} },
+      scales:{
+        x:{ title:{display:true, text:'S ($/h)'} },
+        y:{ title:{display:true, text:'H* (h/month)'}, beginAtZero:true }
+      }
+    },
+    plugins:[whiteBG]
+  });
+
+  // CPU Bars
+  const barCtx = els('chart-bar').getContext('2d');
+  barChart && barChart.destroy();
+  barChart = new Chart(barCtx, {
+    type:'bar',
+    data:{
+      labels:['Labor','RaaS','CAPEX'],
+      datasets:[
+        {label:'$/unit', data:[out.CL,out.CR,out.CC], backgroundColor:['#333','#777','#bbb'], borderColor:['#333','#777','#bbb']}
+      ]
+    },
+    options:{
+      responsive:true,
+      plugins:{ legend:{display:false} },
+      scales:{
+        y:{ beginAtZero:true, title:{display:true, text:'$/unit'} }
+      }
+    },
+    plugins:[whiteBG]
+  });
+
+  // Tornado sensitivity (±20%) on Δ = CR - CC
+  const baseDelta = out.CR - out.CC;
+  const keys = ['S','H','P','r','n','M','CPM','pe','Pe','w'];
+  const labels = ['S','H','P','r','n','M','CPM','pₑ','Pₑ','w'];
+  const impacts = [];
+  keys.forEach((k,i)=>{
+    const plus = {...all}; plus[k] = all[k]*1.2;
+    const minus = {...all}; minus[k] = all[k]*0.8;
+    const dPlus = compute(plus).CR - compute(plus).CC;
+    const dMinus = compute(minus).CR - compute(minus).CC;
+    const span = Math.max(Math.abs(dPlus-baseDelta), Math.abs(dMinus-baseDelta));
+    impacts.push({label:labels[i], span});
+  });
+  impacts.sort((a,b)=> b.span - a.span);
+  const torCtx = els('chart-tornado').getContext('2d');
+  tornadoChart && tornadoChart.destroy();
+  tornadoChart = new Chart(torCtx, {
+    type:'bar',
+    data:{
+      labels: impacts.map(x=>x.label),
+      datasets:[{
+        label:'|Δ change| (±20%)',
+        data: impacts.map(x=> x.span),
+        backgroundColor:'#777', borderColor:'#777'
+      }]
+    },
+    options:{
+      indexAxis:'y',
+      responsive:true,
+      plugins:{ legend:{display:false} },
+      scales:{
+        x:{ title:{display:true, text:'Absolute change in Δ ($/unit)'} }
+      }
+    },
+    plugins:[whiteBG]
+  });
+
+  els('status').textContent = `UPH=${out.UPH.toFixed(0)}; A=$${out.A.toFixed(0)}/mo; H*=${out.Hstar.toFixed(0)} h/mo; Energy/unit ~ $${out.energyUnit.toExponential(2)}`;
+}
+
+function saveCanvasPNG(canvasId, name){
+  const link = document.createElement('a');
+  link.download = name;
+  link.href = els(canvasId).toDataURL('image/png', 1.0);
+  link.click();
+}
+
+document.getElementById('recalc').addEventListener('click', buildCharts);
+document.getElementById('save1').addEventListener('click', ()=>saveCanvasPNG('chart-be','fig_break_even.png'));
+document.getElementById('save2').addEventListener('click', ()=>saveCanvasPNG('chart-bar','fig_labor_compare.png'));
+document.getElementById('save3').addEventListener('click', ()=>saveCanvasPNG('chart-tornado','fig_tornado.png'));
+
+document.getElementById('export').addEventListener('click', ()=>{
+  const a = getInputs();
+  const rows = [
+    ['key','value','unit','notes'],
+    ['S',a.S,'$/h','RaaS price'],
+    ['H',a.H,'h/mo','Hours per month'],
+    ['CPM',a.CPM,'boxes/min','Cycles per minute'],
+    ['Pe',a.Pe,'kW','Robot power'],
+    ['pe',a.pe,'$/kWh','Electricity price'],
+    ['P',a.P,'$','CAPEX price'],
+    ['r',a.r,'1/year','APR'],
+    ['n',a.n,'months','Lease term'],
+    ['M',a.M,'$/mo','Maintenance'],
+    ['w',a.w,'$/h','Labor wage'],
+    ['setup',a.setup,'$','One-time'],
+    ['freight',a.freight,'$','One-time'],
+    ['amort',a.amort?1:0,'','1=amortize setup+freight']
+  ].map(r=>r.join(',')).join('\n');
+  const blob = new Blob([rows], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url; link.download = 'params_export.csv'; link.click();
+  URL.revokeObjectURL(url);
+});
+
+// Robust CSV loader (key,value OR wide format)
+document.getElementById('file').addEventListener('change', (e)=>{
+  const f = e.target.files[0];
+  if(!f){ return; }
+  Papa.parse(f, {
+    header:true,
+    skipEmptyLines:true,
+    complete: function(res){
+      try {
+        const rows = res.data;
+        const map = {};
+        rows.forEach(row=>{
+          const keys = Object.keys(row);
+          let k = (row.key || row.parameter || row.name || row.param || '').toString().trim();
+          let v = row.value ?? row.val ?? row.default ?? row.Default ?? row['default value'];
+          if(!k){
+            keys.forEach(h=>{
+              const kk = h.trim();
+              if(['S','H','CPM','P','r','n','M','w','pe','Pe','setup','freight','amort'].includes(kk)){
+                map[kk] = num(row[kk]);
+              }
+            });
+          } else {
+            const norm = {
+              's':'S','raas':'S','raas_price':'S','price_raas':'S',
+              'h':'H','hours':'H','hours_month':'H',
+              'cpm':'CPM',
+              'p':'P','capex':'P','price_capex':'P',
+              'r':'r','apr':'r','rate':'r',
+              'n':'n','months':'n','term':'n',
+              'm':'M','maintenance':'M',
+              'w':'w','wage':'w','labor':'w',
+              'pe':'pe','price_electricity':'pe',
+              'power':'Pe','pe_robot':'Pe','p_e':'pe','pwr':'Pe','pe_kw':'Pe',
+              'setup':'setup','freight':'freight',
+              'amort':'amort','amortize':'amort'
+            };
+            const keyLower = k.toLowerCase();
+            const nk = norm[keyLower] || k;
+            map[nk] = num(v);
+          }
+        });
+        if(Object.keys(map).length===0){
+          els('status').textContent = 'CSV parsed but no recognized keys. Expected headers: key,value OR columns S,H,CPM,P,r,n,M,w,pe,Pe,setup,freight,amort';
+          return;
+        }
+        setInputs(map);
+        els('status').textContent = `Loaded CSV. Recognized keys: ${Object.keys(map).join(', ')}`;
+        buildCharts();
+      } catch(err){
+        console.error(err);
+        els('status').textContent = 'Failed to apply CSV. See console for details.';
+      }
+    }
+  });
+});
+
+buildCharts();
+</script>
+</body>
+</html>
